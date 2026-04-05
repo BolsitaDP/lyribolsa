@@ -1,0 +1,30 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.lyribolsa.desktop
+productName: Lyribolsa
+asar: true
+electronVersion: 37.7.1
+files:
+  - filter:
+      - dist/**/*
+      - electron/**/*
+      - package.json
+extraResources:
+  - from: .env
+    to: .env
+  - from: .env.example
+    to: .env.example
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Lyribolsa

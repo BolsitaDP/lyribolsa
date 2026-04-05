@@ -2,7 +2,15 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("lyribolsa", {
   auth: {
-    openSpotifyLogin: (spotifyAuthUrl) => ipcRenderer.invoke("auth:open-spotify-login", spotifyAuthUrl)
+    getStatus: () => ipcRenderer.invoke("auth:get-status"),
+    connectSpotify: () => ipcRenderer.invoke("auth:connect-spotify"),
+    disconnectSpotify: () => ipcRenderer.invoke("auth:disconnect-spotify")
+  },
+  spotify: {
+    getCurrentTrack: () => ipcRenderer.invoke("spotify:get-current-track")
+  },
+  lyrics: {
+    resolveTrack: (track) => ipcRenderer.invoke("lyrics:resolve-track", track)
   },
   overlay: {
     createOrFocus: () => ipcRenderer.invoke("overlay:create-or-focus"),

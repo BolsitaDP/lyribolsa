@@ -1,10 +1,24 @@
-import type { OverlayPreferencesDto } from "@lyribolsa/contracts";
+import type {
+  AuthSessionDto,
+  CurrentTrackResponseDto,
+  OverlayPreferencesDto,
+  ResolveLyricsResponseDto,
+  TrackPlaybackDto
+} from "@lyribolsa/contracts";
 
 declare global {
   interface Window {
     lyribolsa: {
       auth: {
-        openSpotifyLogin: (spotifyAuthUrl: string) => Promise<{ ok: boolean; error?: string }>;
+        getStatus: () => Promise<AuthSessionDto>;
+        connectSpotify: () => Promise<AuthSessionDto>;
+        disconnectSpotify: () => Promise<AuthSessionDto>;
+      };
+      spotify: {
+        getCurrentTrack: () => Promise<CurrentTrackResponseDto>;
+      };
+      lyrics: {
+        resolveTrack: (track: TrackPlaybackDto) => Promise<ResolveLyricsResponseDto>;
       };
       overlay: {
         createOrFocus: () => Promise<{ ok: boolean }>;

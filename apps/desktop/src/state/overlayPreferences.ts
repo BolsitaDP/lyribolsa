@@ -2,7 +2,9 @@ import { create } from "zustand";
 import type { OverlayPreferencesDto } from "@lyribolsa/contracts";
 
 const defaultPreferences: OverlayPreferencesDto = {
-  opacity: 0.75,
+  mode: "edit",
+  backgroundOpacity: 0.2,
+  textOpacity: 1,
   fontSize: 28,
   alwaysOnTop: true
 };

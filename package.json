@@ -8,11 +8,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k \"npm run dev:backend\" \"npm run dev:desktop\"",
+    "dev": "npm run dev:desktop",
+    "dev:all": "concurrently -k \"npm run dev:backend\" \"npm run dev:desktop\"",
     "dev:backend": "npm run dev -w @lyribolsa/backend",
     "dev:desktop": "npm run dev -w @lyribolsa/desktop",
-    "build": "npm run build -w @lyribolsa/backend && npm run build -w @lyribolsa/desktop",
-    "typecheck": "npm run typecheck -w @lyribolsa/backend && npm run typecheck -w @lyribolsa/desktop"
+    "build": "npm run build -w @lyribolsa/desktop",
+    "build:all": "npm run build -w @lyribolsa/backend && npm run build -w @lyribolsa/desktop",
+    "typecheck": "npm run typecheck -w @lyribolsa/desktop",
+    "typecheck:all": "npm run typecheck -w @lyribolsa/backend && npm run typecheck -w @lyribolsa/desktop",
+    "pack:win": "npm run pack:win -w @lyribolsa/desktop",
+    "dist:win": "npm run dist:win -w @lyribolsa/desktop"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

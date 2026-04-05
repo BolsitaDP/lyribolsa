@@ -39,8 +39,12 @@ export interface ResolveLyricsResponseDto {
   lyrics: LyricsDto | null;
 }
 
+export type OverlayMode = "edit" | "present";
+
 export interface OverlayPreferencesDto {
-  opacity: number;
+  mode: OverlayMode;
+  backgroundOpacity: number;
+  textOpacity: number;
   fontSize: number;
   alwaysOnTop: boolean;
 }
@@ -51,6 +55,8 @@ export interface AuthSessionDto {
   status: "pending" | "connecting" | "connected" | "error";
   connected: boolean;
   spotifyUserId?: string | null;
+  spotifyDisplayName?: string | null;
+  spotifyAvatarUrl?: string | null;
   error?: string | null;
   updatedAt?: string;
   createdAt?: string;

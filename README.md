@@ -1,41 +1,45 @@
-# lyribolsa MVP
+# lyribolsa MVP (Embedded Mode)
 
-Monorepo base scaffold:
+Current default runtime is fully embedded:
 
-- `apps/backend`: Node.js + Express + TypeScript API for Spotify auth/playback and lyrics resolution with LRCLIB-backed caching.
-- `apps/desktop`: Electron + React + TypeScript desktop app with main window and floating overlay window.
-- `packages/contracts`: shared TypeScript contracts (DTOs and domain payloads).
+- `apps/desktop`: Electron + React + TypeScript
+- `packages/contracts`: shared DTO contracts
+- Spotify auth, current-track fetch and LRCLIB lyrics resolution run inside Electron `main` process via IPC.
 
 ## Quick Start
 
 1. Install dependencies:
    - `npm install`
-2. Run backend + desktop in parallel:
+2. Create desktop env file:
+   - `copy apps\\desktop\\.env.example apps\\desktop\\.env`
+3. Set `SPOTIFY_CLIENT_ID` in `apps/desktop/.env`.
+4. Run app:
    - `npm run dev`
 
-## Spotify OAuth Setup (Current Phase)
+## Spotify Setup
 
-1. Create an app in Spotify Developer Dashboard:
-   - [https://developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+1. Create an app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
 2. Configure Redirect URI exactly:
-   - `http://127.0.0.1:4000/v1/auth/spotify/callback`
-3. Copy backend env file:
-   - `copy apps\\backend\\.env.example apps\\backend\\.env`
-4. Set:
-   - `SPOTIFY_CLIENT_ID`
-   - `SPOTIFY_CLIENT_SECRET`
-5. Make sure PostgreSQL is running and reachable via `DATABASE_URL` (`apps/backend/.env`).
-   - The backend auto-applies `apps/backend/db/migrations/0001_init.sql` on startup.
+   - `http://127.0.0.1:45879/spotify/callback`
+3. Enable API:
+   - `Web API`
 
-After that, start the app with `npm run dev`, press `Connect Spotify`, authorize in browser, then return to the desktop app.
+Then open desktop app and click `Connect Spotify`.
 
-## Current Phase
+## Build Windows .exe
 
-This is Phase 1 scaffold:
+1. Ensure `apps/desktop/.env` exists and `SPOTIFY_CLIENT_ID` is set.
+2. Build installer from repo root:
+   - `npm run dist:win`
+3. Output:
+   - `apps/desktop/release/Lyribolsa-Setup-0.1.0.exe`
 
-- project structure
-- core route skeletons
-- IPC boundaries and window bootstrap
-- initial PostgreSQL migration draft
+Optional unpacked build (for quick local smoke test):
 
-Feature implementation will be incremental on top of this base.
+- `npm run pack:win`
+
+## Notes
+
+- Lyrics are fetched from LRCLIB and cached locally with TTL.
+- Overlay preferences and auth state are stored locally in Electron Store.
+- Legacy cloud/backend scaffold remains in `apps/backend` for future migration.

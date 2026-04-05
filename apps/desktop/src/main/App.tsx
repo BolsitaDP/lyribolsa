@@ -1,104 +1,81 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { AuthSessionDto, CreateAuthSessionRequestDto, CurrentTrackResponseDto } from "@lyribolsa/contracts";
-import axios from "axios";
-import { apiClient } from "../api/client";
 import { useOverlayPreferencesStore } from "../state/overlayPreferences";
 
-function getOrCreateDesktopClientId(): string {
-  const storageKey = "lyribolsa.desktopClientId";
-  const existing = localStorage.getItem(storageKey);
-  if (existing) {
-    return existing;
-  }
-  const created = crypto.randomUUID();
-  localStorage.setItem(storageKey, created);
-  return created;
+function formatMs(ms: number): string {
+  const safe = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 export function App() {
   const preferences = useOverlayPreferencesStore((state) => state.preferences);
   const setPreferences = useOverlayPreferencesStore((state) => state.setPreferences);
-  const [desktopClientId] = useState<string>(() => getOrCreateDesktopClientId());
-  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem("lyribolsa.sessionId"));
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     window.lyribolsa.overlay.getPreferences().then(setPreferences).catch(console.error);
   }, [setPreferences]);
 
-  const createSessionMutation = useMutation({
-    mutationFn: async () => {
-      const payload: CreateAuthSessionRequestDto = {
-        desktopClientId
-      };
-      const response = await apiClient.post<AuthSessionDto>("/auth/session", payload);
-      return response.data;
-    }
-  });
-
-  useEffect(() => {
-    if (sessionId || createSessionMutation.isPending) {
-      return;
-    }
-    createSessionMutation
-      .mutateAsync()
-      .then((createdSession) => {
-        setSessionId(createdSession.sessionId);
-        localStorage.setItem("lyribolsa.sessionId", createdSession.sessionId);
-        if (createdSession.appUserId) {
-          localStorage.setItem("lyribolsa.desktopClientId", createdSession.appUserId);
-        }
-      })
-      .catch(console.error);
-  }, [createSessionMutation, desktopClientId, sessionId]);
-
   const authSessionQuery = useQuery({
-    queryKey: ["auth-session", sessionId],
+    queryKey: ["embedded-auth-status"],
     queryFn: async () => {
-      const response = await apiClient.get<AuthSessionDto>(`/auth/session/${sessionId}`);
-      return response.data;
+      return window.lyribolsa.auth.getStatus();
     },
-    enabled: Boolean(sessionId),
-    retry: (failureCount, error) => {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        return false;
-      }
-      return failureCount < 2;
-    },
-    refetchInterval: (query) => (query.state.data?.connected ? 5000 : 2000)
+    refetchInterval: 3000
   });
 
-  useEffect(() => {
-    const error = authSessionQuery.error;
-    if (!error || !axios.isAxiosError(error)) {
-      return;
+  const connectSpotifyMutation = useMutation({
+    mutationFn: async () => {
+      return window.lyribolsa.auth.connectSpotify();
+    },
+    onSuccess: () => {
+      authSessionQuery.refetch().catch(console.error);
+      currentTrackQuery.refetch().catch(console.error);
     }
-    if (error.response?.status !== 404) {
-      return;
+  });
+
+  const disconnectSpotifyMutation = useMutation({
+    mutationFn: async () => {
+      return window.lyribolsa.auth.disconnectSpotify();
+    },
+    onSuccess: () => {
+      authSessionQuery.refetch().catch(console.error);
+      currentTrackQuery.refetch().catch(console.error);
     }
-    localStorage.removeItem("lyribolsa.sessionId");
-    setSessionId(null);
-  }, [authSessionQuery.error]);
+  });
+
+  const connected = Boolean(authSessionQuery.data?.connected);
 
   const currentTrackQuery = useQuery({
-    queryKey: ["current-track", sessionId],
+    queryKey: ["embedded-current-track"],
     queryFn: async () => {
-      const response = await apiClient.get<CurrentTrackResponseDto>(`/spotify/current-track?sessionId=${sessionId}`);
-      return response.data;
+      return window.lyribolsa.spotify.getCurrentTrack();
     },
-    enabled: Boolean(sessionId && authSessionQuery.data?.connected),
+    enabled: connected,
     refetchInterval: 2500
   });
 
-  const spotifyStartUrl = useMemo(() => {
-    if (!sessionId) {
-      return null;
-    }
-    return `http://127.0.0.1:4000/v1/auth/spotify/start?sessionId=${encodeURIComponent(sessionId)}`;
-  }, [sessionId]);
+  const lyricsQuery = useQuery({
+    queryKey: ["embedded-lyrics", currentTrackQuery.data?.track?.spotifyTrackId],
+    queryFn: async () => {
+      if (!currentTrackQuery.data?.track) {
+        return null;
+      }
+      return window.lyribolsa.lyrics.resolveTrack(currentTrackQuery.data.track);
+    },
+    enabled: Boolean(currentTrackQuery.data?.track?.spotifyTrackId),
+    refetchInterval: 10000
+  });
 
-  const authStatusLabel = authSessionQuery.data?.status ?? "pending";
-  const track = currentTrackQuery.data?.track ?? null;
+  const track = connected ? currentTrackQuery.data?.track ?? null : null;
+  const lyrics = lyricsQuery.data?.lyrics ?? null;
+  const isPresentMode = preferences.mode === "present";
+  const profileName = authSessionQuery.data?.spotifyDisplayName ?? authSessionQuery.data?.spotifyUserId ?? "Spotify";
+  const profileAvatar = authSessionQuery.data?.spotifyAvatarUrl ?? null;
+  const progressRatio =
+    track && track.durationMs > 0 ? Math.max(0, Math.min(100, (track.progressMs / track.durationMs) * 100)) : 0;
 
   const updatePreferences = async (partial: Partial<typeof preferences>) => {
     const next = await window.lyribolsa.overlay.updatePreferences(partial);
@@ -107,47 +84,168 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <section className="card">
-        <h1>Lyribolsa MVP</h1>
-        <p>Desktop base scaffold: Spotify auth, backend API integration and floating lyrics overlay.</p>
-        <div className="status-grid">
-          <div className="status-item">
+      <header className="main-topbar">
+        <div className="brand-block">
+          <h1>Lyribolsa</h1>
+          <p>Desktop lyrics overlay</p>
+        </div>
+
+        <div className="topbar-right">
+          <button type="button" className="settings-toggle" onClick={() => setSettingsOpen((current) => !current)}>
+            Settings
+          </button>
+
+          <div className="profile-chip">
+            {profileAvatar ? <img src={profileAvatar} alt="Spotify profile" className="profile-avatar" /> : <div className="profile-avatar-placeholder">S</div>}
+            <div className="profile-meta">
+              <span>{profileName}</span>
+              <small>{connected ? "Connected" : "Disconnected"}</small>
+            </div>
+            <span className={connected ? "profile-status connected" : "profile-status disconnected"}>
+              {connected ? "\u2713" : "!"}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {settingsOpen ? (
+        <section className="settings-panel">
+          <div className="settings-row">
             <span>Session</span>
-            <strong>{sessionId ?? "creating..."}</strong>
+            <strong>{authSessionQuery.data?.sessionId ?? "-"}</strong>
           </div>
-          <div className="status-item">
-            <span>Spotify status</span>
-            <strong>{authStatusLabel}</strong>
-          </div>
-          <div className="status-item">
+          <div className="settings-row">
             <span>Spotify user</span>
             <strong>{authSessionQuery.data?.spotifyUserId ?? "-"}</strong>
           </div>
-        </div>
-        {authSessionQuery.data?.error ? <p className="error-text">Auth error: {authSessionQuery.data.error}</p> : null}
-        <div className="track-box">
-          <span>Current track</span>
-          <strong>{track ? `${track.trackName} - ${track.artistName}` : "No active track detected"}</strong>
-        </div>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-btn primary"
+              disabled={connectSpotifyMutation.isPending}
+              onClick={() => {
+                connectSpotifyMutation.mutate();
+              }}
+            >
+              Connect Spotify
+            </button>
+            <button
+              type="button"
+              className="settings-btn"
+              disabled={!connected || disconnectSpotifyMutation.isPending}
+              onClick={() => {
+                disconnectSpotifyMutation.mutate();
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+          {authSessionQuery.data?.error ? <p className="settings-error">{authSessionQuery.data.error}</p> : null}
+        </section>
+      ) : null}
 
-        <div className="controls">
-          <div className="control">
-            <label htmlFor="opacity">Overlay opacity ({Math.round(preferences.opacity * 100)}%)</label>
+      <section className="home-grid">
+        <article className="now-playing-card">
+          <div className="now-playing-header">
+            <span>Now Playing</span>
+            <small>{lyrics ? (lyrics.hasSynced ? "Synced lyrics" : "Plain lyrics") : "No lyrics loaded"}</small>
+          </div>
+
+          <div className="track-layout">
+            {track?.artworkUrl ? (
+              <img src={track.artworkUrl} alt={track.trackName} className="track-artwork" />
+            ) : (
+              <div className="track-artwork placeholder">{"\u266A"}</div>
+            )}
+
+            <div className="track-copy">
+              <h2>{track ? track.trackName : "No active track"}</h2>
+              <p>{track ? track.artistName : "Start playback on Spotify"}</p>
+              <p className="album-line">{track?.albumName ?? " "}</p>
+            </div>
+          </div>
+
+          <div className="track-progress">
+            <div className="progress-bar">
+              <div className="progress-fill" style={{ width: `${progressRatio}%` }} />
+            </div>
+            <div className="progress-labels">
+              <span>{track ? formatMs(track.progressMs) : "0:00"}</span>
+              <span>{track ? formatMs(track.durationMs) : "0:00"}</span>
+            </div>
+          </div>
+        </article>
+
+        <article className="overlay-config-card">
+          <div className="overlay-config-header">
+            <span>Overlay</span>
+            <button
+              type="button"
+              className="settings-btn slim"
+              onClick={() => {
+                window.lyribolsa.overlay.createOrFocus().catch(console.error);
+              }}
+            >
+              Open Overlay
+            </button>
+          </div>
+
+          <div className="control compact">
+            <label>Mode</label>
+            <div className="mode-switch">
+              <button
+                type="button"
+                className={preferences.mode === "edit" ? "mode-btn active" : "mode-btn"}
+                onClick={() => {
+                  updatePreferences({ mode: "edit" }).catch(console.error);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className={preferences.mode === "present" ? "mode-btn active" : "mode-btn"}
+                onClick={() => {
+                  updatePreferences({ mode: "present" }).catch(console.error);
+                }}
+              >
+                Present
+              </button>
+            </div>
+          </div>
+
+          <div className="control compact">
+            <label htmlFor="backgroundOpacity">Background ({Math.round(preferences.backgroundOpacity * 100)}%)</label>
             <input
-              id="opacity"
+              id="backgroundOpacity"
               type="range"
-              min={0.2}
+              min={0}
               max={1}
-              step={0.05}
-              value={preferences.opacity}
+              step={0.01}
+              value={preferences.backgroundOpacity}
               onChange={(event) => {
-                updatePreferences({ opacity: Number(event.target.value) }).catch(console.error);
+                updatePreferences({ backgroundOpacity: Number(event.target.value) }).catch(console.error);
               }}
             />
           </div>
 
-          <div className="control">
-            <label htmlFor="fontSize">Font size ({preferences.fontSize}px)</label>
+          <div className="control compact">
+            <label htmlFor="textOpacity">Text ({Math.round(preferences.textOpacity * 100)}%)</label>
+            <input
+              id="textOpacity"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={preferences.textOpacity}
+              onChange={(event) => {
+                updatePreferences({ textOpacity: Number(event.target.value) }).catch(console.error);
+              }}
+            />
+          </div>
+
+          <div className="control compact">
+            <label htmlFor="fontSize">Font ({preferences.fontSize}px)</label>
             <input
               id="fontSize"
               type="range"
@@ -161,12 +259,15 @@ export function App() {
             />
           </div>
 
-          <div className="control">
-            <label htmlFor="alwaysOnTop">Always on top</label>
+          <div className="control compact">
+            <label htmlFor="alwaysOnTop">
+              Always on top {isPresentMode ? "(forced)" : ""}
+            </label>
             <input
               id="alwaysOnTop"
               type="checkbox"
-              checked={preferences.alwaysOnTop}
+              checked={isPresentMode ? true : preferences.alwaysOnTop}
+              disabled={isPresentMode}
               onChange={(event) => {
                 window.lyribolsa.overlay
                   .setAlwaysOnTop(event.target.checked)
@@ -175,31 +276,7 @@ export function App() {
               }}
             />
           </div>
-        </div>
-
-        <div className="actions">
-          <button
-            type="button"
-            onClick={() => {
-              window.lyribolsa.overlay.createOrFocus().catch(console.error);
-            }}
-          >
-            Open overlay
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={!spotifyStartUrl}
-            onClick={() => {
-              if (!spotifyStartUrl) {
-                return;
-              }
-              window.lyribolsa.auth.openSpotifyLogin(spotifyStartUrl).catch(console.error);
-            }}
-          >
-            Connect Spotify
-          </button>
-        </div>
+        </article>
       </section>
     </main>
   );
