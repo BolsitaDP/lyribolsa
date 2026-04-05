@@ -1,0 +1,23 @@
+{
+  "name": "lyribolsa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop lyrics overlay MVP (Electron + React + TypeScript + Node backend).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:backend\" \"npm run dev:desktop\"",
+    "dev:backend": "npm run dev -w @lyribolsa/backend",
+    "dev:desktop": "npm run dev -w @lyribolsa/desktop",
+    "build": "npm run build -w @lyribolsa/backend && npm run build -w @lyribolsa/desktop",
+    "typecheck": "npm run typecheck -w @lyribolsa/backend && npm run typecheck -w @lyribolsa/desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
